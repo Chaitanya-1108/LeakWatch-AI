@@ -1,17 +1,17 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from datetime import datetime, timedelta
+import csv
+import io
+import json
 from app.database.session import get_db
 from app.models.db_models import LeakAlert, SensorReading
 
 router = APIRouter()
 
-@router.get("/summary")
-async def get_analytics_summary(db: Session = Depends(get_db)):
-    """
-    Get top-level metrics for the infrastructure dashboard.
-    """
+def _compute_summary(db: Session) -> dict:
     # 1. Total incidents in last 30 days
     last_30_days = datetime.now() - timedelta(days=30)
     total_alerts = db.query(LeakAlert).filter(LeakAlert.timestamp >= last_30_days).count()
@@ -48,14 +48,104 @@ async def get_analytics_summary(db: Session = Depends(get_db)):
     financial_loss = total_loss_liters * cost_per_liter
 
     return {
-        "summary": {
-            "total_incidents": total_alerts,
-            "critical_incidents": critical_alerts,
-            "total_water_loss_liters": round(total_loss_liters, 2),
-            "total_financial_loss_usd": round(financial_loss, 2),
-            "avg_severity_score": round(float(db.query(func.avg(LeakAlert.severity_score)).scalar() or 0.0), 1)
-        }
+        "total_incidents": total_alerts,
+        "critical_incidents": critical_alerts,
+        "total_water_loss_liters": round(total_loss_liters, 2),
+        "total_financial_loss_usd": round(financial_loss, 2),
+        "avg_severity_score": round(float(db.query(func.avg(LeakAlert.severity_score)).scalar() or 0.0), 1),
     }
+
+
+@router.get("/summary")
+async def get_analytics_summary(db: Session = Depends(get_db)):
+    """
+    Get top-level metrics for the infrastructure dashboard.
+    """
+    return {"summary": _compute_summary(db)}
+
+
+@router.get("/export/monthly-summary")
+async def export_monthly_summary(
+    format: str = Query(default="json", pattern="^(json|csv)$"),
+    db: Session = Depends(get_db),
+):
+    summary = _compute_summary(db)
+    filename_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    if format == "csv":
+        buffer = io.StringIO()
+        writer = csv.DictWriter(buffer, fieldnames=list(summary.keys()))
+        writer.writeheader()
+        writer.writerow(summary)
+        content = buffer.getvalue()
+        return Response(
+            content=content,
+            media_type="text/csv",
+            headers={
+                "Content-Disposition": f"attachment; filename=monthly_summary_{filename_ts}.csv"
+            },
+        )
+
+    content = json.dumps({"summary": summary}, indent=2)
+    return Response(
+        content=content,
+        media_type="application/json",
+        headers={
+            "Content-Disposition": f"attachment; filename=monthly_summary_{filename_ts}.json"
+        },
+    )
+
+
+@router.get("/export/telemetry")
+async def export_telemetry_data(
+    days: int = Query(default=30, ge=1, le=365),
+    format: str = Query(default="csv", pattern="^(json|csv)$"),
+    db: Session = Depends(get_db),
+):
+    start_date = datetime.now() - timedelta(days=days)
+    rows = (
+        db.query(SensorReading)
+        .filter(SensorReading.timestamp >= start_date)
+        .order_by(SensorReading.timestamp.asc())
+        .all()
+    )
+
+    records = [
+        {
+            "id": r.id,
+            "timestamp": r.timestamp.isoformat() if r.timestamp else None,
+            "pressure": r.pressure,
+            "flow_rate": r.flow_rate,
+            "acoustic_signal": r.acoustic_signal,
+            "mode": r.mode,
+        }
+        for r in rows
+    ]
+    filename_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    if format == "json":
+        content = json.dumps({"records": records, "count": len(records), "days": days}, indent=2)
+        return Response(
+            content=content,
+            media_type="application/json",
+            headers={
+                "Content-Disposition": f"attachment; filename=telemetry_{days}d_{filename_ts}.json"
+            },
+        )
+
+    buffer = io.StringIO()
+    fieldnames = ["id", "timestamp", "pressure", "flow_rate", "acoustic_signal", "mode"]
+    writer = csv.DictWriter(buffer, fieldnames=fieldnames)
+    writer.writeheader()
+    writer.writerows(records)
+    content = buffer.getvalue()
+    return Response(
+        content=content,
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f"attachment; filename=telemetry_{days}d_{filename_ts}.csv"
+        },
+    )
 
 @router.get("/trends")
 async def get_incident_trends(days: int = 7, db: Session = Depends(get_db)):

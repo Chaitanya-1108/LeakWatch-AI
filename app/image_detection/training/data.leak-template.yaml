@@ -1,0 +1,14 @@
+# Copy this file to data.leak.yaml and update the paths.
+# Dataset format: YOLO detection format.
+
+path: C:/datasets/water-leak-yolo
+train: images/train
+val: images/val
+test: images/test
+
+names:
+  0: pipe_crack
+  1: rust_corrosion
+  2: joint_leakage
+  3: burst_pipe
+

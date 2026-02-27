@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, Float, String, DateTime, Boolean, ForeignKey
+from sqlalchemy import Column, Integer, Float, String, DateTime, Boolean, ForeignKey, Text
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.database.session import Base
@@ -52,3 +52,30 @@ class User(Base):
     hashed_password = Column(String)
     role = Column(String, default="operator") # operator, admin, supervisor
     is_active = Column(Boolean, default=True)
+
+
+class LeakImagePrediction(Base):
+    __tablename__ = "leak_image_predictions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+    filename = Column(String, nullable=False)
+    leak_type = Column(String, nullable=False)
+    severity_level = Column(String, nullable=False)
+    confidence_score = Column(Float, nullable=False)
+    recommended_solution = Column(String, nullable=False)
+    detections_json = Column(Text, nullable=False)
+
+
+class WaterQualityReadingRecord(Base):
+    __tablename__ = "water_quality_readings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+    pipeline_id = Column(String, index=True, nullable=False)
+    ph = Column(Float, nullable=False)
+    turbidity = Column(Float, nullable=False)
+    tds = Column(Float, nullable=False)
+    temperature = Column(Float, nullable=False)
+    dissolved_oxygen = Column(Float, nullable=False)
+    mode = Column(String, nullable=False)

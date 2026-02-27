@@ -1,0 +1,10 @@
+path: C:/Users/Chait/Desktop/water-leak-detection/water-leak-yolo
+train: images/train
+val: images/val
+test: images/test
+
+names:
+  0: pipe_crack
+  1: rust_corrosion
+  2: joint_leakage
+  3: burst_pipe
